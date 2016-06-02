@@ -1,11 +1,11 @@
 'use strict';
 
 const aws = require('aws-sdk');
+const child = require('child_process');
 const express = require('express');
 const fs = require('fs');
 const morgan = require('morgan');
 const multer = require('multer');
-const spawn = require('child_process').spawn;
 
 // Configuration
 
@@ -29,6 +29,8 @@ const upload = multer({ dest: './tmp' });
 const apiV1 = express.Router();
 
 apiV1.post('/replays', upload.single('replay'), (request, response) => {
+  response.set('Content-Type', 'application/json');
+
   const name = request.file.originalname;
   const path = request.file.path;
 
@@ -45,17 +47,16 @@ apiV1.post('/replays', upload.single('replay'), (request, response) => {
   });
 
   // Convert the replay to JSON with Octane.
-  const octane = spawn('./bin/octane', [path]);
-  var stdout = '';
+  const octane = child.spawn('./bin/octane', [path]);
   var stderr = '';
-  octane.stdout.on('data', (data) => { stdout += data.toString(); });
+  octane.stdout.on('data', (data) => { response.write(data.toString()); });
   octane.stderr.on('data', (data) => { stderr += data.toString(); });
   octane.on('close', (status) => {
     if (status !== 0) {
       console.error(stderr);
-      return response.status(500).json(null);
+      return response.status(500).end();
     }
-    response.status(200).set('Content-Type', 'application/json').send(stdout);
+    response.status(200).end();
   });
 });
 

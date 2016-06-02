@@ -2,9 +2,13 @@
 
 module Main (main) where
 
+import Data.Monoid ((<>))
+
 import qualified Data.Aeson as Aeson
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy as ByteString
+import qualified Data.String as String
+import qualified Data.Version as Version
 import qualified Network.HTTP.Types as Http
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
@@ -50,16 +54,33 @@ getRoot = do
             \<head>\
                 \<meta charset='utf-8'>\
                 \<title>Octane</title>\
+                \<style>\
+                    \body {\
+                        \text-align: center;\
+                    \}\
+                \</style>\
             \</head>\
             \<body>\
                 \<h1>Octane</h1>\
+                \<p>\
+                    \Upload a Rocket League replay. Get some JSON.\
+                \</p>\
                 \<form action='replays' enctype='multipart/form-data' method='post'>\
                     \<input name='replay' type='file'>\
                     \<input type='submit'>\
                 \</form>\
+                \<p>\
+                    \<a href='https://github.com/tfausak/octane'>\
+                        \Octane " <> octaneVersion <> "\
+                    \</a>\
+                \</p>\
             \</body>\
         \</html>"
     pure (Wai.responseLBS status headers body)
+
+
+octaneVersion :: (String.IsString string) => string
+octaneVersion = String.fromString (Version.showVersion Octane.version)
 
 
 postReplays :: Wai.Request -> IO Wai.Response

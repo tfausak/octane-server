@@ -44,10 +44,11 @@ application request respond = do
 getRoot :: IO Wai.Response
 getRoot = do
     let status = Http.ok200
-    let headers = [(Http.hContentType, "text/html; charset=utf-8")]
+    let headers = [(Http.hContentType, "text/html")]
     let body = "<!doctype html>\
         \<html>\
             \<head>\
+                \<meta charset='utf-8'>\
                 \<title>Octane</title>\
             \</head>\
             \<body>\
@@ -73,7 +74,7 @@ postReplays request = do
             let frames = Octane.parseFrames replay
 
             let status = Http.ok200
-            let headers = [(Http.hContentType, "application/json; charset=utf-8")]
+            let headers = [(Http.hContentType, "application/json")]
             let body = encodeReplay replay frames
             pure (Wai.responseLBS status headers body)
 

@@ -1,0 +1,15 @@
+name: octane-server
+version: '0.1.0'
+executables:
+  octane-server:
+    dependencies:
+    - aeson
+    - base
+    - binary
+    - bytestring
+    - http-types
+    - octane
+    - wai
+    - wai-extra
+    - warp
+    main: Main.hs

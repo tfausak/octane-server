@@ -1,0 +1,97 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+module Main (main) where
+
+import qualified Data.Aeson as Aeson
+import qualified Data.Binary as Binary
+import qualified Data.ByteString.Lazy as ByteString
+import qualified Network.HTTP.Types as Http
+import qualified Network.Wai as Wai
+import qualified Network.Wai.Handler.Warp as Warp
+import qualified Network.Wai.Middleware.Gzip as Gzip
+import qualified Network.Wai.Middleware.RequestLogger as RequestLogger
+import qualified Network.Wai.Parse as Parse
+import qualified Octane
+
+
+main :: IO ()
+main = Warp.runEnv 8080 (middleware application)
+
+
+middleware :: Wai.Middleware
+middleware
+    = RequestLogger.logStdout
+    . Gzip.gzip Gzip.def
+
+
+application :: Wai.Application
+application request respond = do
+    let path = Wai.pathInfo request
+    let method = Wai.requestMethod request
+
+    response <- case path of
+        [] -> case method of
+            "GET" -> getRoot
+            _ -> notAllowed
+        ["replays"] -> case method of
+            "POST" -> postReplays request
+            _ -> notAllowed
+        _ -> notFound
+
+    respond response
+
+
+getRoot :: IO Wai.Response
+getRoot = do
+    let status = Http.ok200
+    let headers = [(Http.hContentType, "text/html; charset=utf-8")]
+    let body = "<!doctype html>\
+        \<html>\
+            \<head>\
+                \<title>Octane</title>\
+            \</head>\
+            \<body>\
+                \<h1>Octane</h1>\
+                \<form action='replays' enctype='multipart/form-data' method='post'>\
+                    \<input name='replay' type='file'>\
+                    \<input type='submit'>\
+                \</form>\
+            \</body>\
+        \</html>"
+    pure (Wai.responseLBS status headers body)
+
+
+postReplays :: Wai.Request -> IO Wai.Response
+postReplays request = do
+    (_, files) <- Parse.parseRequestBody Parse.lbsBackEnd request
+
+    case lookup "replay" files of
+        Nothing -> badRequest
+        Just file -> do
+            let content = Parse.fileContent file
+            let replay = Binary.decode content
+            let frames = Octane.parseFrames replay
+
+            let status = Http.ok200
+            let headers = [(Http.hContentType, "application/json; charset=utf-8")]
+            let body = encodeReplay replay frames
+            pure (Wai.responseLBS status headers body)
+
+
+encodeReplay :: Octane.Replay -> [Octane.Frame] -> ByteString.ByteString
+encodeReplay replay frames = Aeson.encode (Aeson.object
+    [ ("frames", Aeson.toJSON frames)
+    , ("meta", Aeson.toJSON replay)
+    ])
+
+
+badRequest :: IO Wai.Response
+badRequest = pure (Wai.responseLBS Http.badRequest400 [] "")
+
+
+notFound :: IO Wai.Response
+notFound = pure (Wai.responseLBS Http.notFound404 [] "")
+
+
+notAllowed :: IO Wai.Response
+notAllowed = pure (Wai.responseLBS Http.methodNotAllowed405 [] "")

@@ -46,13 +46,16 @@ apiV1.post('/replays', upload.single('replay'), (request, response) => {
 
   // Convert the replay to JSON with Octane.
   const octane = spawn('./bin/octane', [path]);
-  var output = '';
-  octane.stdout.on('data', (data) => {
-    output += data;
-  });
+  var stdout = '';
+  var stderr = '';
+  octane.stdout.on('data', (data) => { stdout += data.toString(); });
+  octane.stderr.on('data', (data) => { stderr += data.toString(); });
   octane.on('close', (status) => {
-    if (status !== 0) { return response.status(500).json(null); }
-    response.status(200).json(JSON.parse(output));
+    if (status !== 0) {
+      console.error(stderr);
+      return response.status(500).json(null);
+    }
+    response.status(200).set('Content-Type', 'application/json').send(stdout);
   });
 });
 

@@ -1,0 +1,20 @@
+{
+  "private": true,
+  "engines": {
+    "node": "6.2.1",
+    "npm": "3.9.3"
+  },
+  "dependencies": {
+    "aws-sdk": "2.3.19",
+    "express": "4.13.4",
+    "knex": "0.11.5",
+    "morgan": "1.7.0",
+    "multer": "1.1.0",
+    "pg": "5.1.0",
+    "uuid": "2.0.2"
+  },
+  "scripts": {
+    "db": "knex",
+    "start": "node ."
+  }
+}

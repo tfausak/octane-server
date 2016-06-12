@@ -56,15 +56,30 @@ apiV1.post('/replays', upload.single('replay'), (request, response) => {
 
   // Convert the replay to JSON with Octane.
   const octane = child.spawn(`./bin/octane-0.9.0-${process.platform}`, [path]);
+  var stdout = '';
   var stderr = '';
-  octane.stdout.on('data', (data) => { response.write(data.toString()); });
+  octane.stdout.on('data', (data) => { stdout += data.toString(); });
   octane.stderr.on('data', (data) => { stderr += data.toString(); });
   octane.on('close', (status) => {
     if (status !== 0) {
       console.error(stderr);
       return response.status(500).end();
     }
-    response.status(200).end();
+    const replay = JSON.parse(stdout);
+
+    // Save the replay to the database.
+    db('replays')
+      .insert({
+        guid: uuid.unparse(uuid.parse(replay['Metadata']['Id'])),
+        map_name: replay['Metadata']['MapName'],
+        match_type: replay['Metadata']['MatchType'],
+        num_frames: replay['Metadata']['NumFrames'],
+        played_on: replay['Metadata']['Date'].substring(0, 10),
+        team_0_score: replay['Metadata']['Team0Score'] || 0,
+        team_1_score: replay['Metadata']['Team1Score'] || 0,
+        team_size: replay['Metadata']['TeamSize']
+      })
+      .then(() => { response.json(replay); });
   });
 });
 

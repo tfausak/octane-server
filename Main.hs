@@ -12,6 +12,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.String as String
+import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Version as Version
 import qualified Database.HDBC as Db
@@ -28,6 +29,7 @@ import qualified Octane
 import qualified Paths_octane_server as This
 import qualified System.Environment as Environment
 import qualified System.IO as Io
+import qualified System.IO.Unsafe as Unsafe
 import qualified Text.Read as Read
 
 
@@ -82,6 +84,7 @@ application request respond = do
             "GET" -> getRoot
             _ -> notAllowed
         ["api", "v1", "replays"] -> case method of
+            "GET" -> getReplays
             "POST" -> postReplays request
             _ -> notAllowed
         _ -> notFound
@@ -129,6 +132,37 @@ octaneVersion :: (String.IsString string) => string
 octaneVersion = Octane.version & Version.showVersion & String.fromString
 
 
+connection :: Sqlite.Connection
+connection = Unsafe.unsafePerformIO (do
+    maybeDb <- Environment.lookupEnv "DATABASE"
+    let db = Maybe.fromMaybe ":memory:" maybeDb
+
+    c <- Sqlite.connectSqlite3 db
+    Db.runRaw c
+        "CREATE TABLE IF NOT EXISTS replays (\
+            \guid TEXT PRIMARY KEY\
+        \)"
+
+    pure c)
+
+
+getReplays :: IO Wai.Response
+getReplays = do
+    selectReplays <- Db.prepare connection "SELECT * FROM replays"
+    _ <- Db.execute selectReplays []
+    rows <- Db.fetchAllRowsMap' selectReplays
+
+    let status = Http.ok200
+    let headers = [(Http.hContentType, "application/json")]
+    let body = rows
+            & map (\ row -> row
+                & Map.mapKeys Text.pack
+                & Map.map show)
+            & Aeson.encode
+    let response = Wai.responseLBS status headers body
+    pure response
+
+
 postReplays :: Wai.Request -> IO Wai.Response
 postReplays request = do
     (_, files) <- Parse.parseRequestBody Parse.lbsBackEnd request
@@ -167,14 +201,6 @@ postReplays request = do
             let fullReplay = Octane.unsafeParseReplay content
 
             -- Save the replay's metadata to the database.
-            maybeDb <- Environment.lookupEnv "DATABASE"
-            let db = Maybe.fromMaybe ":memory:" maybeDb
-            connection <- Sqlite.connectSqlite3 db
-            createTable <- Db.prepare connection
-                "CREATE TABLE IF NOT EXISTS replays (\
-                    \guid TEXT PRIMARY KEY\
-                \)"
-            Db.executeRaw createTable
             insertReplay <- Db.prepare connection
                 "INSERT OR REPLACE INTO replays VALUES (\
                     \/* guid */ ?\

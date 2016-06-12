@@ -29,4 +29,4 @@ license-file: LICENSE.markdown
 maintainer: Taylor Fausak
 name: octane-server
 synopsis: A web front end to Octane.
-version: '0.1.0'
+version: '0.2.0'

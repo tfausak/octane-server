@@ -1,15 +1,25 @@
-name: octane-server
-version: '0.1.0'
+category: Web
+description: Octane Server is a web front end to Octane.
 executables:
   octane-server:
     dependencies:
     - aeson
     - base
-    - binary
-    - bytestring
     - http-types
     - octane
     - wai
     - wai-extra
     - warp
     main: Main.hs
+extra-source-files:
+- CHANGELOG.markdown
+- package.yaml
+- README.markdown
+- stack.yaml
+ghc-options: -Wall
+license: MIT
+license-file: LICENSE.markdown
+maintainer: Taylor Fausak
+name: octane-server
+synopsis: A web front end to Octane.
+version: '0.1.0'

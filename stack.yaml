@@ -1,3 +1,1 @@
-extra-deps:
-- octane-0.6.0
-resolver: nightly-2016-06-02
+resolver: nightly-2016-06-12

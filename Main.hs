@@ -2,11 +2,12 @@
 
 module Main (main) where
 
+import Control.Category ((>>>))
+import Data.Function ((&))
 import Data.Monoid ((<>))
 
+import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
-import qualified Data.Binary as Binary
-import qualified Data.ByteString.Lazy as ByteString
 import qualified Data.String as String
 import qualified Data.Version as Version
 import qualified Network.HTTP.Types as Http
@@ -16,16 +17,50 @@ import qualified Network.Wai.Middleware.Gzip as Gzip
 import qualified Network.Wai.Middleware.RequestLogger as RequestLogger
 import qualified Network.Wai.Parse as Parse
 import qualified Octane
+import qualified Paths_octane_server as This
+import qualified System.Environment as Environment
+import qualified Text.Read as Read
 
 
 main :: IO ()
-main = Warp.runEnv 8080 (middleware application)
+main = do
+    settings <- getSettings
+    Warp.runSettings settings applicationWithMiddleware
+
+
+getSettings :: IO Warp.Settings
+getSettings = do
+    maybeHost <- Environment.lookupEnv "HOST"
+    let host = case maybeHost of
+            Nothing -> "127.0.0.1"
+            Just x -> String.fromString x
+
+    maybePort <- Environment.lookupEnv "PORT"
+    let port = case maybePort & fmap Read.readMaybe & Monad.join of
+            Nothing -> 8080
+            Just x -> x
+
+    let serverName = "octane-server-" <> version
+
+    let settings = Warp.defaultSettings
+            & Warp.setHost host
+            & Warp.setPort port
+            & Warp.setServerName serverName
+    pure settings
+
+
+version :: (String.IsString string) => string
+version = This.version & Version.showVersion & String.fromString
+
+
+applicationWithMiddleware :: Wai.Application
+applicationWithMiddleware = middleware application
 
 
 middleware :: Wai.Middleware
 middleware
     = RequestLogger.logStdout
-    . Gzip.gzip Gzip.def
+    >>> Gzip.gzip Gzip.def
 
 
 application :: Wai.Application
@@ -37,7 +72,7 @@ application request respond = do
         [] -> case method of
             "GET" -> getRoot
             _ -> notAllowed
-        ["replays"] -> case method of
+        ["api", "v1", "replays"] -> case method of
             "POST" -> postReplays request
             _ -> notAllowed
         _ -> notFound
@@ -56,7 +91,8 @@ getRoot = do
                 \<title>Octane</title>\
                 \<style>\
                     \body {\
-                        \text-align: center;\
+                        \font-family:sans-serif;\
+                        \text-align:center;\
                     \}\
                 \</style>\
             \</head>\
@@ -65,7 +101,7 @@ getRoot = do
                 \<p>\
                     \Upload a Rocket League replay. Get some JSON.\
                 \</p>\
-                \<form action='replays' enctype='multipart/form-data' method='post'>\
+                \<form action='api/v1/replays' enctype='multipart/form-data' method='post'>\
                     \<input name='replay' type='file'>\
                     \<input type='submit'>\
                 \</form>\
@@ -76,11 +112,12 @@ getRoot = do
                 \</p>\
             \</body>\
         \</html>"
-    pure (Wai.responseLBS status headers body)
+    let response = Wai.responseLBS status headers body
+    pure response
 
 
 octaneVersion :: (String.IsString string) => string
-octaneVersion = String.fromString (Version.showVersion Octane.version)
+octaneVersion = Octane.version & Version.showVersion & String.fromString
 
 
 postReplays :: Wai.Request -> IO Wai.Response
@@ -91,29 +128,32 @@ postReplays request = do
         Nothing -> badRequest
         Just file -> do
             let content = Parse.fileContent file
-            let replay = Binary.decode content
-            let frames = Octane.parseFrames replay
+            let replay = Octane.unsafeParseReplay content
 
             let status = Http.ok200
             let headers = [(Http.hContentType, "application/json")]
-            let body = encodeReplay replay frames
-            pure (Wai.responseLBS status headers body)
-
-
-encodeReplay :: Octane.Replay -> [Octane.Frame] -> ByteString.ByteString
-encodeReplay replay frames = Aeson.encode (Aeson.object
-    [ ("frames", Aeson.toJSON frames)
-    , ("meta", Aeson.toJSON replay)
-    ])
+            let body = Aeson.encode replay
+            let response = Wai.responseLBS status headers body
+            pure response
 
 
 badRequest :: IO Wai.Response
-badRequest = pure (Wai.responseLBS Http.badRequest400 [] "")
+badRequest = do
+    let response = emptyResponse Http.badRequest400
+    pure response
 
 
 notFound :: IO Wai.Response
-notFound = pure (Wai.responseLBS Http.notFound404 [] "")
+notFound = do
+    let response = emptyResponse Http.notFound404
+    pure response
 
 
 notAllowed :: IO Wai.Response
-notAllowed = pure (Wai.responseLBS Http.methodNotAllowed405 [] "")
+notAllowed = do
+    let response = emptyResponse Http.methodNotAllowed405
+    pure response
+
+
+emptyResponse :: Http.Status -> Wai.Response
+emptyResponse status = Wai.responseLBS status [] ""

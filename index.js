@@ -68,19 +68,65 @@ apiV1.post('/replays', upload.single('replay'), (request, response) => {
     const replay = JSON.parse(stdout);
 
     // Save the replay to the database.
+    const guid = uuid.unparse(uuid.parse(replay['Metadata']['Id']));
     db('replays')
-      .insert({
-        guid: uuid.unparse(uuid.parse(replay['Metadata']['Id'])),
-        map_name: replay['Metadata']['MapName'],
-        match_type: replay['Metadata']['MatchType'],
-        num_frames: replay['Metadata']['NumFrames'],
-        played_on: replay['Metadata']['Date'].substring(0, 10),
-        team_0_score: replay['Metadata']['Team0Score'] || 0,
-        team_1_score: replay['Metadata']['Team1Score'] || 0,
-        team_size: replay['Metadata']['TeamSize']
-      })
-      .then(() => { response.json(replay); });
+      .where('guid', guid)
+      .then((replays) => {
+        if (replays.length === 0) {
+          db('replays')
+            .insert({
+              guid: guid,
+              map_name: replay['Metadata']['MapName'],
+              match_type: replay['Metadata']['MatchType'],
+              num_frames: replay['Metadata']['NumFrames'],
+              played_on: replay['Metadata']['Date'].substring(0, 10),
+              team_0_score: replay['Metadata']['Team0Score'] || 0,
+              team_1_score: replay['Metadata']['Team1Score'] || 0,
+              team_size: replay['Metadata']['TeamSize']
+            })
+            .then(() => { response.json(replay); });
+        } else {
+          db('replays')
+            .where('guid', guid)
+            .update({
+              map_name: replay['Metadata']['MapName'],
+              match_type: replay['Metadata']['MatchType'],
+              num_frames: replay['Metadata']['NumFrames'],
+              played_on: replay['Metadata']['Date'].substring(0, 10),
+              team_0_score: replay['Metadata']['Team0Score'] || 0,
+              team_1_score: replay['Metadata']['Team1Score'] || 0,
+              team_size: replay['Metadata']['TeamSize']
+            })
+            .then(() => { response.json(replay); });
+        }
+      });
   });
+});
+
+apiV1.get('/replays', (_request, response) => {
+  db('replays')
+    .orderBy('created_at', 'desc')
+    .then((replays) => {
+      response.json(replays);
+    });
+});
+
+apiV1.get(/\/replays\/([-0-9a-fA-F]+)/, (request, response) => {
+  const guid = uuid.parse(request.params[0]);
+  const canonicalGuid = uuid.unparse(guid);
+  console.log(guid);
+  console.log(canonicalGuid);
+  if (request.params[0] !== canonicalGuid) {
+    return response.redirect(canonicalGuid);
+  }
+  db('replays')
+    .where('guid', request.params[0])
+    .then((replays) => {
+      if (replays.length !== 1) {
+        return response.status(404).json(null);
+      }
+      response.json(replays[0]);
+    });
 });
 
 // API

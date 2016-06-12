@@ -140,7 +140,15 @@ connection = Unsafe.unsafePerformIO (do
     c <- Sqlite.connectSqlite3 db
     Db.runRaw c
         "CREATE TABLE IF NOT EXISTS replays (\
-            \guid TEXT PRIMARY KEY\
+            \guid TEXT PRIMARY KEY NOT NULL,\
+            \version TEXT NOT NULL,\
+            \date TEXT NOT NULL,\
+            \match_type TEXT NOT NULL,\
+            \map_name TEXT NOT NULL,\
+            \team_size INTEGER NOT NULL,\
+            \team_0_score INTEGER NOT NULL,\
+            \team_1_score INTEGER NOT NULL,\
+            \num_frames INTEGER NOT NULL\
         \)"
 
     pure c)
@@ -203,12 +211,33 @@ postReplays request = do
             -- Save the replay's metadata to the database.
             insertReplay <- Db.prepare connection
                 "INSERT OR REPLACE INTO replays VALUES (\
-                    \/* guid */ ?\
+                    \/* guid */ ?,\
+                    \/* version */ ?,\
+                    \/* date */ ?,\
+                    \/* match_type */ ?,\
+                    \/* map_name */ ?,\
+                    \/* team_size */ ?,\
+                    \/* team_0_score */ ?,\
+                    \/* team_1_score */ ?,\
+                    \/* num_frames */ ?\
                 \)"
             let (Octane.FullReplay (replay, _frames)) = fullReplay
+            let replayVersion = concat
+                    [ replay & Octane.replayVersion1 & Octane.unpackWord32LE & show
+                    , "."
+                    , replay & Octane.replayVersion2 & Octane.unpackWord32LE & show
+                    ]
             let properties = replay & Octane.replayProperties & Octane.unpackDictionary
             _ <- Db.execute insertReplay
                 [ properties & Map.lookup "Id" & (\ (Just (Octane.StrProperty _ (Octane.PCString x))) -> x) & Db.toSql
+                , replayVersion & Db.toSql
+                , properties & Map.lookup "Date" & (\ (Just (Octane.StrProperty _ (Octane.PCString x))) -> x) & Db.toSql
+                , properties & Map.lookup "MatchType" & (\ (Just (Octane.NameProperty _ (Octane.PCString x))) -> x) & Db.toSql
+                , properties & Map.lookup "MapName" & (\ (Just (Octane.NameProperty _ (Octane.PCString x))) -> x) & Db.toSql
+                , properties & Map.lookup "TeamSize" & (\ (Just (Octane.IntProperty _ (Octane.Word32LE x))) -> x) & Db.toSql
+                , properties & Map.lookup "Team0Score" & Maybe.fromMaybe (Octane.IntProperty (Octane.Word64LE 0) (Octane.Word32LE 0)) & (\ (Octane.IntProperty _ (Octane.Word32LE x)) -> x) & Db.toSql
+                , properties & Map.lookup "Team1Score" & Maybe.fromMaybe (Octane.IntProperty (Octane.Word64LE 0) (Octane.Word32LE 0)) & (\ (Octane.IntProperty _ (Octane.Word32LE x)) -> x) & Db.toSql
+                , properties & Map.lookup "NumFrames" & (\ (Just (Octane.IntProperty _ (Octane.Word32LE x))) -> x) & Db.toSql
                 ]
 
             let status = Http.ok200

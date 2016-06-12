@@ -9,10 +9,14 @@ import Data.Monoid ((<>))
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
+import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 import qualified Data.String as String
 import qualified Data.Text.Encoding as Text
 import qualified Data.Version as Version
-import qualified Network.AWS as AWS
+import qualified Database.HDBC as Db
+import qualified Database.HDBC.Sqlite3 as Sqlite
+import qualified Network.AWS as Aws
 import qualified Network.AWS.S3 as S3
 import qualified Network.HTTP.Types as Http
 import qualified Network.Wai as Wai
@@ -23,7 +27,7 @@ import qualified Network.Wai.Parse as Parse
 import qualified Octane
 import qualified Paths_octane_server as This
 import qualified System.Environment as Environment
-import qualified System.IO as IO
+import qualified System.IO as Io
 import qualified Text.Read as Read
 
 
@@ -136,35 +140,54 @@ postReplays request = do
 
             -- Upload the replay to S3.
             _ <- Concurrent.forkIO (do
-                let region = AWS.NorthVirginia
-                let credentials = AWS.Discover
-                env <- AWS.newEnv region credentials
-                logger <- AWS.newLogger AWS.Info IO.stdout
-                let env' = env & AWS.envLogger .~ logger
+                let region = Aws.NorthVirginia
+                let credentials = Aws.Discover
+                env <- Aws.newEnv region credentials
+                logger <- Aws.newLogger Aws.Info Io.stdout
+                let env' = env & Aws.envLogger .~ logger
                 let bucket = S3.BucketName "octane-replays"
                 let key = file & Parse.fileName & Text.decodeUtf8 & S3.ObjectKey
-                res <- AWS.runResourceT (AWS.runAWS env' (do
+                res <- Aws.runResourceT (Aws.runAWS env' (do
                     let req = S3.headObject bucket key
-                    AWS.trying AWS._Error (AWS.send req)))
+                    Aws.trying Aws._Error (Aws.send req)))
                 case res of
                     Right _ -> do -- The file already exists.
                         putStrLn ("Replay " ++ show key ++ " already exists on S3.")
                     Left _ -> do -- The file probably doesn't exist.
                         putStrLn ("Uploading " ++ show key ++ " to S3...")
-                        res' <- AWS.runResourceT (AWS.runAWS env' (do
-                            let body = AWS.toBody content
+                        res' <- Aws.runResourceT (Aws.runAWS env' (do
+                            let body = Aws.toBody content
                             let req = S3.putObject bucket key body
-                            AWS.trying AWS._Error (AWS.send req)))
+                            Aws.trying Aws._Error (Aws.send req)))
                         case res' of
                             Right _ -> putStrLn ("Uploaded " ++ show key ++ " to S3.")
-                            Left e -> IO.hPutStrLn IO.stderr ("Failed to upload " ++ show key ++ " to S3: " ++ show e))
+                            Left e -> Io.hPutStrLn Io.stderr ("Failed to upload " ++ show key ++ " to S3: " ++ show e))
 
             -- Parse the replay.
-            let replay = Octane.unsafeParseReplay content
+            let fullReplay = Octane.unsafeParseReplay content
+
+            -- Save the replay's metadata to the database.
+            maybeDb <- Environment.lookupEnv "DATABASE"
+            let db = Maybe.fromMaybe ":memory:" maybeDb
+            connection <- Sqlite.connectSqlite3 db
+            createTable <- Db.prepare connection
+                "CREATE TABLE IF NOT EXISTS replays (\
+                    \guid TEXT PRIMARY KEY\
+                \)"
+            Db.executeRaw createTable
+            insertReplay <- Db.prepare connection
+                "INSERT OR REPLACE INTO replays VALUES (\
+                    \/* guid */ ?\
+                \)"
+            let (Octane.FullReplay (replay, _frames)) = fullReplay
+            let properties = replay & Octane.replayProperties & Octane.unpackDictionary
+            _ <- Db.execute insertReplay
+                [ properties & Map.lookup "Id" & (\ (Just (Octane.StrProperty _ (Octane.PCString x))) -> x) & Db.toSql
+                ]
 
             let status = Http.ok200
             let headers = [(Http.hContentType, "application/json")]
-            let body = Aeson.encode replay
+            let body = Aeson.encode fullReplay
             let response = Wai.responseLBS status headers body
             pure response
 

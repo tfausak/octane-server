@@ -7,6 +7,9 @@ executables:
     - amazonka
     - amazonka-s3
     - base
+    - containers
+    - HDBC
+    - HDBC-sqlite3
     - http-types
     - lens
     - octane

@@ -4,9 +4,13 @@ executables:
   octane-server:
     dependencies:
     - aeson
+    - amazonka
+    - amazonka-s3
     - base
     - http-types
+    - lens
     - octane
+    - text
     - wai
     - wai-extra
     - warp

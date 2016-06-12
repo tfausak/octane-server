@@ -3,13 +3,17 @@
 module Main (main) where
 
 import Control.Category ((>>>))
-import Data.Function ((&))
+import Control.Lens
 import Data.Monoid ((<>))
 
+import qualified Control.Concurrent as Concurrent
 import qualified Control.Monad as Monad
 import qualified Data.Aeson as Aeson
 import qualified Data.String as String
+import qualified Data.Text.Encoding as Text
 import qualified Data.Version as Version
+import qualified Network.AWS as AWS
+import qualified Network.AWS.S3 as S3
 import qualified Network.HTTP.Types as Http
 import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
@@ -19,6 +23,7 @@ import qualified Network.Wai.Parse as Parse
 import qualified Octane
 import qualified Paths_octane_server as This
 import qualified System.Environment as Environment
+import qualified System.IO as IO
 import qualified Text.Read as Read
 
 
@@ -128,6 +133,33 @@ postReplays request = do
         Nothing -> badRequest
         Just file -> do
             let content = Parse.fileContent file
+
+            -- Upload the replay to S3.
+            _ <- Concurrent.forkIO (do
+                let region = AWS.NorthVirginia
+                let credentials = AWS.Discover
+                env <- AWS.newEnv region credentials
+                logger <- AWS.newLogger AWS.Info IO.stdout
+                let env' = env & AWS.envLogger .~ logger
+                let bucket = S3.BucketName "octane-replays"
+                let key = file & Parse.fileName & Text.decodeUtf8 & S3.ObjectKey
+                res <- AWS.runResourceT (AWS.runAWS env' (do
+                    let req = S3.headObject bucket key
+                    AWS.trying AWS._Error (AWS.send req)))
+                case res of
+                    Right _ -> do -- The file already exists.
+                        putStrLn ("Replay " ++ show key ++ " already exists on S3.")
+                    Left _ -> do -- The file probably doesn't exist.
+                        putStrLn ("Uploading " ++ show key ++ " to S3...")
+                        res' <- AWS.runResourceT (AWS.runAWS env' (do
+                            let body = AWS.toBody content
+                            let req = S3.putObject bucket key body
+                            AWS.trying AWS._Error (AWS.send req)))
+                        case res' of
+                            Right _ -> putStrLn ("Uploaded " ++ show key ++ " to S3.")
+                            Left e -> IO.hPutStrLn IO.stderr ("Failed to upload " ++ show key ++ " to S3: " ++ show e))
+
+            -- Parse the replay.
             let replay = Octane.unsafeParseReplay content
 
             let status = Http.ok200

@@ -22,10 +22,12 @@ Octane Server is a web front end to [Octane][].
 
 Configure Octane Server with environment variables.
 
-Name | Default
----- | -------
-HOST | `127.0.0.1`
-PORT | `8080`
+Name                  | Default
+----                  | -------
+AWS_ACCESS_KEY_ID     | -
+AWS_SECRET_ACCESS_KEY | -
+HOST                  | `127.0.0.1`
+PORT                  | `8080`
 
 [Octane Server]: https://github.com/tfausak/octane-server
 [Octane]: https://github.com/tfausak/octane
